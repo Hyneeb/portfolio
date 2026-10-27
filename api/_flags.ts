@@ -1,6 +1,6 @@
 // CTF backend only. Flags live ONLY in env vars, never in frontend code.
-// On Vercel: set FLAG_FINAL and CTF_CODE_1..4 — exactly the five vars that
-// scripts/generate-flags.mjs prints — in Project Settings > Environment
+// On Vercel: set FLAG_FINAL and CTF_CODE_1..4. exactly the five vars that
+// scripts/generate-flags.mjs prints. in Project Settings > Environment
 // Variables. Do NOT commit real flags. Local dev: copy .env.example to .env,
 // or run scripts/generate-flags.mjs to generate the five values.
 import { createHash } from "node:crypto";
@@ -15,13 +15,13 @@ export function hashFlag(flag: string): string {
   return createHash("sha256").update(flag.trim()).digest("hex");
 }
 
-// Stage code words — one per stop in the chain. Backend only, never in the frontend.
+// Stage code words. one per stop in the chain. Backend only, never in the frontend.
 // Override with CTF_CODE_1..4 env vars on Vercel. Dev defaults are in code
 // only so local dev works; they are NOT flags, and the final flag is still env-only.
 export function getCode(stage: number): string {
   const env = { 1: "CTF_CODE_1", 2: "CTF_CODE_2", 3: "CTF_CODE_3", 4: "CTF_CODE_4" } as Record<number, string>;
   const dev = { 1: "all-aboard", 2: "warm-sunset", 3: "forty-five", 4: "found-it" } as Record<number, string>;
-  // Dev defaults are local-only. In production an unset code is NOT configured —
+  // Dev defaults are local-only. In production an unset code is NOT configured . 
   // never silently fall back to values that are in the public repo.
   if (process.env[env[stage]]) return process.env[env[stage]] as string;
   if (process.env.NODE_ENV === "production") return "";
@@ -39,7 +39,7 @@ export function getFlag(id: ChallengeId): string | null {
 }
 
 // Dev-only fallback so `npm run server` works locally without env vars.
-// In production (Vercel) this fallback is disabled — missing env = 500, not a leaked flag.
+// In production (Vercel) this fallback is disabled. missing env = 500, not a leaked flag.
 export function getFlagOrDev(id: ChallengeId): string {
   const v = getFlag(id);
   if (v) return v;

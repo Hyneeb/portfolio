@@ -4,7 +4,7 @@ import { CHALLENGES, isCorrect, rateLimited, getIp, json, asciiHeader, type Chal
 // Validates server-side via SHA-256. Never returns a flag. Hints are in the response.
 export default async function handler(req: any, res: any) {
   if (req.method !== "POST") return json(res, 405, { error: "POST only" });
-  if (rateLimited(getIp(req))) return json(res, 429, { error: "Too many attempts — wait a minute." });
+  if (rateLimited(getIp(req))) return json(res, 429, { error: "Too many attempts. wait a minute." });
   const { challengeId, flag } = req.body || {};
   if (!challengeId || !CHALLENGES[challengeId as ChallengeId] || typeof flag !== "string") {
     return json(res, 400, { error: "challengeId and flag are required" });
@@ -14,7 +14,7 @@ export default async function handler(req: any, res: any) {
   return json(res, 200, {
     challengeId,
     correct: ok,
-    message: ok ? "Correct — you found the one flag." : "Not that one. Check the hint and try again.",
+    message: ok ? "Correct. you found the one flag." : "Not that one. Check the hint and try again.",
     hint: CHALLENGES[challengeId as ChallengeId].hint,
   });
 }

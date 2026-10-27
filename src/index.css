@@ -40,7 +40,10 @@ section[id]{scroll-margin-top:92px}
 .filter[aria-pressed="true"]{background:var(--ink);color:#fff}
 .map-wrap{position:relative;overflow-x:auto}
 svg.map{width:100%;height:auto;display:block;background:linear-gradient(#FFF8E7,#FFF3D6);border:3px solid var(--ink);border-radius:18px}
-.station{cursor:pointer}
+.station{cursor:pointer;outline:none;-webkit-tap-highlight-color:transparent}
+.station:focus{outline:none}
+.station:focus-visible{outline:none}
+a,button{-webkit-tap-highlight-color:transparent}
 .station:hover circle.core,.station:focus-visible circle.core{stroke-width:5}
 .station-label{font-family:'Baloo 2';font-weight:700;font-size:15px;fill:var(--ink);paint-order:stroke;stroke:#FFF8E7;stroke-width:4px}
 .layout{display:grid;grid-template-columns:1fr 380px;gap:16px;align-items:start}

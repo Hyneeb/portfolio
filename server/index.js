@@ -1,7 +1,7 @@
-// Local CTF backend only — NOT the portfolio itself. The portfolio is static.
+// Local CTF backend only. NOT the portfolio itself. The portfolio is static.
 // Run: npm run server   (port 3001, Vite proxies /api to it in dev)
 // The final flag comes ONLY from FLAG_FINAL; stage codes from CTF_CODE_1..4.
-// If none are set, dev flags are used locally only — never printed, and
+// If none are set, dev flags are used locally only. never printed, and
 // never sent to the browser.
 // Set real flags on Vercel: Project Settings > Environment Variables.
 import http from "node:http";
@@ -52,14 +52,14 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === "/api/submit-flag") {
     if (!b.flag || b.challengeId !== "final") return send(res, 400, { error: "challengeId (final) and flag are required" });
     const ok = hash(b.flag || "") === hash(FINAL_FLAG);
-    return send(res, 200, { challengeId: "final", correct: !!ok, message: ok ? "Correct — you found the one flag. Conductor status unlocked." : "Not that flag." });
+    return send(res, 200, { challengeId: "final", correct: !!ok, message: ok ? "Correct. you found the one flag. Conductor status unlocked." : "Not that flag." });
   }
-  if (url.pathname === "/api/ctf/advance") {
+  if (url.pathname === "/api/ctf-advance" || url.pathname === "/api/ctf/advance") {
     const stage = Number(b.stage);
     const ok = [1,2,3,4].includes(stage) && hash(String(b.code||"").toLowerCase()) === hash(CODES[stage].toLowerCase());
     if (!ok) return send(res, 200, { correct: false, message: "Not that code. Check the hint for this stop." });
     if (stage === 4) return send(res, 200, { correct: true, nextStage: 5, message: "Last stop cleared.", flag: FINAL_FLAG });
-    return send(res, 200, { correct: true, nextStage: stage + 1, message: "Stop " + stage + " cleared — on to stop " + (stage + 1) + "." });
+    return send(res, 200, { correct: true, nextStage: stage + 1, message: "Stop " + stage + " cleared. On to stop " + (stage + 1) + "." });
   }
   if (url.pathname === "/api/shell") {
     const cmd = String(b.command || "").trim().toLowerCase();
@@ -83,6 +83,6 @@ const server = http.createServer(async (req, res) => {
   return send(res, 404, { error: "Unknown /api route" });
 });
 server.listen(PORT, () => {
-  console.log(`CTF backend only — http://localhost:${PORT}/api/health`);
-  if (!process.env.FLAG_FINAL) console.log("Using dev flags — set FLAG_FINAL and CTF_CODE_1..4 in .env for real flags.");
+  console.log(`CTF backend only. http://localhost:${PORT}/api/health`);
+  if (!process.env.FLAG_FINAL) console.log("Using dev flags. set FLAG_FINAL and CTF_CODE_1..4 in .env for real flags.");
 });
