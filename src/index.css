@@ -37,6 +37,7 @@ section[id]{scroll-margin-top:92px}
 .dot{width:12px;height:12px;border-radius:50%;display:inline-block;border:2px solid var(--ink)}
 .filters{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
 .filter{border:2px solid var(--ink);background:#fff;border-radius:999px;padding:7px 13px;font-weight:800}
+.filters a.filter{text-decoration:none;color:var(--ink)}
 .filter[aria-pressed="true"]{background:var(--ink);color:#fff}
 .map-wrap{position:relative;overflow-x:auto}
 svg.map{width:100%;height:auto;display:block;background:linear-gradient(#FFF8E7,#FFF3D6);border:3px solid var(--ink);border-radius:18px}
@@ -97,3 +98,39 @@ footer{border-top:3px solid var(--ink);padding:28px 0 40px;margin-top:20px;text-
 
 .line-pill{display:inline-block;color:var(--ink);font-weight:800;font-size:13px;padding:5px 11px;border-radius:999px;border:2px solid var(--ink)}
 svg.map{min-width:720px}
+
+/* --- Phones: 640px and under --- */
+.map-hint{display:none;font-size:13px;font-weight:700;color:#5A4632;text-align:center;margin:8px 0 0}
+.map-wrap{-webkit-overflow-scrolling:touch}
+@media(max-width:640px){
+  body{font-size:16px}
+  .wrap{padding:0 14px}
+  section[id]{scroll-margin-top:112px}
+  .header-in{flex-wrap:wrap;gap:6px 10px;padding:8px 0}
+  .logo{font-size:18px}
+  .header-in .btn.small{margin-left:auto}
+  nav.main{order:3;flex-basis:100%;margin-left:0;flex-wrap:nowrap;overflow-x:auto;gap:2px;scrollbar-width:none}
+  nav.main::-webkit-scrollbar{display:none}
+  nav.main a{padding:6px 7px;font-size:14px;white-space:nowrap}
+  .hero{padding:28px 0 12px}
+  .hero p.lede{font-size:17px}
+  .hero-actions{flex-direction:column;align-items:stretch}
+  .hero-actions .btn{text-align:center}
+  .section{padding:24px 0}
+  .section h2{font-size:26px}
+  .panel{padding:16px}
+  .panel h2{font-size:22px}
+  .map-card{padding:10px}
+  svg.map{min-width:600px}
+  .map-hint{display:block}
+  .paint-grid{grid-template-columns:repeat(2,1fr)}
+  .list-item{padding:14px}
+  .list-item h3{font-size:19px}
+  .ticket{min-width:80px;padding:6px 8px}
+  .ticket b{font-size:18px}
+  .ctf-card{padding:14px}
+  .demo{padding:12px}
+  .terminal{font-size:13px;min-height:150px}
+  .panel-actions .btn{flex:1 1 40%;text-align:center}
+  footer{padding:20px 0 32px}
+}
