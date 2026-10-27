@@ -1,4 +1,4 @@
-import { isCorrectCode, getFlagOrDev, rateLimited, getIp, json } from "./_flags";
+import { isCorrectCode, getFlagOrDev, rateLimited, getIp, json } from "./_flags.js";
 // POST /api/ctf/advance { stage: 1|2|3|4, code }
 // Validates a stage code word server-side (SHA-256). On stage 4 success,
 // returns the ONE final flag in the JSON body — check Network, it is not

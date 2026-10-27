@@ -1,4 +1,4 @@
-import { getCode, json } from "./_flags";
+import { getCode, json } from "./_flags.js";
 // POST /api/painting-predict { paintingId }
 // Correct painting ("sunset") returns the stage-2 code in the
 // X-CTF-Code response header, not in the body. Check Network > Headers.

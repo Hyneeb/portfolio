@@ -1,4 +1,4 @@
-import { getCode, json } from "./_flags";
+import { getCode, json } from "./_flags.js";
 // POST /api/radar { code } — code is the radar metric number, e.g. "45".
 // Returns the stage-3 code word in the body. Check Network.
 export default async function handler(req: any, res: any) {

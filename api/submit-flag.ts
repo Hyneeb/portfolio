@@ -1,4 +1,4 @@
-import { CHALLENGES, isCorrect, rateLimited, getIp, json, asciiHeader, type ChallengeId } from "./_flags";
+import { CHALLENGES, isCorrect, rateLimited, getIp, json, asciiHeader, type ChallengeId } from "./_flags.js";
 
 // POST /api/submit-flag  { challengeId, flag }
 // Validates server-side via SHA-256. Never returns a flag. Hints are in the response.

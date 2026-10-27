@@ -1,4 +1,4 @@
-import { json, asciiHeader } from "./_flags";
+import { json, asciiHeader } from "./_flags.js";
 // GET /api/hint?stage=1 — short riddles only, never codes or flags.
 const HINTS: Record<number, string> = {
   0: "Psst — peek behind the curtain.",

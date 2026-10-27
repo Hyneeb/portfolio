@@ -1,4 +1,4 @@
-import { getCode, json } from "./_flags";
+import { getCode, json } from "./_flags.js";
 // POST /api/shell { command }
 // "cat ticket-1.txt" returns the stage-1 code word in the JSON body.
 // The frontend shell does NOT print it — open DevTools > Network to see it.

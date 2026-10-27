@@ -44,7 +44,9 @@ function ShellDemo() {
   useEffect(() => { logRef.current?.scrollTo({ top: logRef.current.scrollHeight }); }, [lines]);
   const run = async (cmd: string) => {
     const c = cmd.trim().toLowerCase();
-    if (c === "cat flag.txt" || c === "flag") {
+    // ticket-1.txt is the file `ls` actually shows — it has to work.
+    // cat flag.txt is kept as an alias, but ticket-1.txt is the real one.
+    if (c === "cat ticket-1.txt" || c === "cat flag.txt" || c === "flag") {
       setLines((prev) => [...prev, `muneeb@portfolio:~$ ${cmd}`, "Found it — check Network."]);
       setInput("");
       requestAnimationFrame(() => inputRef.current?.focus());
