@@ -397,6 +397,7 @@ function HardPanel({ onSwitch }: { onSwitch: () => void }) {
 }
 
 const GITHUB_URL = "https://github.com/hyneeb";
+const LINKEDIN_URL = "https://www.linkedin.com/in/syedmuneebhyder/";
 const RESUME_URL = "/resume.pdf";
 const EMAIL = "muneeb.hyder@mail.utoronto.ca";
 const ROUTES: Record<string, { label: string; blurb: string; first: string; line: LineId | "all" }> = {
@@ -656,6 +657,7 @@ export default function App() {
           <div className="hero-actions">
             <a className="btn" href={RESUME_URL}>Download Resume</a>
             <a className="btn secondary" href="#map">Ride the map</a>
+            <a className="btn secondary" href={LINKEDIN_URL} target="_blank" rel="noreferrer">LinkedIn</a>
           </div>
           <p className="trust">Federal Gov, National Radar Program • Live AI • Bellwoods • Investi • CampusClaims (300+ students) • SportsDeck</p>
           <div className="train-track" aria-hidden="true"><span className="train-emoji"><TrainIcon size={30} /></span></div>
@@ -830,9 +832,10 @@ export default function App() {
             <div className="panel-actions">
               <a className="btn" href={`mailto:${EMAIL}`}>Email Muneeb</a>
               <a className="btn secondary" href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub</a>
+              <a className="btn secondary" href={LINKEDIN_URL} target="_blank" rel="noreferrer">LinkedIn</a>
               <a className="btn secondary" href={RESUME_URL}>Download Resume PDF</a>
             </div>
-            <p className="muted">{EMAIL} • <a href="tel:+16477629037">(647) 762-9037</a> • github.com/hyneeb</p>
+            <p className="muted">{EMAIL} • <a href="tel:+16477629037">(647) 762-9037</a> • <a href={GITHUB_URL} target="_blank" rel="noreferrer">github.com/hyneeb</a> • <a href={LINKEDIN_URL} target="_blank" rel="noreferrer">linkedin.com/in/syedmuneebhyder</a></p>
           </div>
         </section>
       </main>
