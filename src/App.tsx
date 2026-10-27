@@ -2,6 +2,20 @@ import { useEffect, useRef, useState } from "react";
 import "./index.css";
 import { STATIONS, LINES, TOUR_ORDER, SKILLS, type Station, type LineId } from "./data/stations";
 
+// --- Easy-mode bridge: the CTF panel lives at the bottom of the page, the
+// stations/demos live at the top, so they talk via window events + localStorage.
+// Hard mode never touches this — its codes stay in Network responses only.
+const EASY_MODE_KEY = "muneeb-ctf-mode";
+const EASY_STAGE_KEY = "muneeb-ctf-stage-easy";
+const EASY_CODE_EVENT = "muneeb-ctf-easy-code";
+const EASY_PEEK_EVENT = "muneeb-ctf-easy-peek";
+const EASY_STAGE_EVENT = "muneeb-ctf-easy-stage";
+const EASY_GOTO_EVENT = "muneeb-ctf-goto";
+const easyModeOn = () => { try { return localStorage.getItem(EASY_MODE_KEY) === "easy"; } catch { return false; } };
+const easyStageNow = () => { try { return Number(localStorage.getItem(EASY_STAGE_KEY) || 1); } catch { return 1; } };
+const emitEasyCode = (stage: number, code: string) => { window.dispatchEvent(new CustomEvent(EASY_CODE_EVENT, { detail: { stage, code } })); };
+const goToStation = (id: string) => { window.dispatchEvent(new CustomEvent(EASY_GOTO_EVENT, { detail: { id } })); };
+
 const PAINTINGS = [
   { id: "sunset", name: "Warm Sunset Hills", swatch: "#F28482", style: "warm, high-contrast landscapes" },
   { id: "sea", name: "Calm Blue Sea", swatch: "#4A9EB8", style: "cool, calm seascapes" },
@@ -44,17 +58,28 @@ function ShellDemo() {
   useEffect(() => { logRef.current?.scrollTo({ top: logRef.current.scrollHeight }); }, [lines]);
   const run = async (cmd: string) => {
     const c = cmd.trim().toLowerCase();
-    // ticket-1.txt is the file `ls` actually shows — it has to work.
-    // cat flag.txt is kept as an alias, but ticket-1.txt is the real one.
-    if (c === "cat ticket-1.txt" || c === "cat flag.txt" || c === "flag") {
-      setLines((prev) => [...prev, `muneeb@portfolio:~$ ${cmd}`, "Found it — check Network."]);
+    // ticket-1.txt is the only ticket file — `ls` shows it, and only it works.
+    if (c === "cat ticket-1.txt") {
       setInput("");
       requestAnimationFrame(() => inputRef.current?.focus());
-      try { await fetch("/api/shell", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ command: cmd }) }); } catch {}
+      try {
+        const r = await fetch("/api/shell", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ command: cmd }) });
+        const j = await r.json();
+        if (j.code) {
+          if (easyModeOn() && easyStageNow() === 2) {
+            setLines((prev) => [...prev, `muneeb@portfolio:~$ ${cmd}`, `Ticket stub: ${j.code} — saved!`]);
+            emitEasyCode(1, j.code);
+          } else {
+            setLines((prev) => [...prev, `muneeb@portfolio:~$ ${cmd}`, "Found it — check Network."]);
+          }
+        } else setLines((prev) => [...prev, `muneeb@portfolio:~$ ${cmd}`, "Backend didn't return a ticket — try again in a moment."]);
+      } catch {
+        setLines((prev) => [...prev, `muneeb@portfolio:~$ ${cmd}`, "Backend not reachable — run npm run server, then try again."]);
+      }
       return;
     }
     let out = "";
-    if (c === "help") out = "try: ls · pwd · whoami · cat resume.txt · echo hello · chat";
+    if (c === "help") out = "try: ls · pwd · whoami · cat resume.txt · echo hello · chat — cat works on any file you see in ls";
     else if (c === "ls") out = "unix-shell/\npainting-classifier/\ncampusclaims/\nsportsdeck/\ntypetyme/\npaintapp/\nresume.txt\nticket-1.txt";
     else if (c === "pwd") out = "/home/muneeb";
     else if (c === "whoami") out = "muneeb — UofT CS '28, open for Summer 2027";
@@ -71,9 +96,9 @@ function ShellDemo() {
     <div className="demo">
       <p><strong>Try the shell</strong></p>
       <p className="demo-note">Mini demo — inspired by my C shell, not the full C program running in your browser.</p>
-      <div className="terminal" role="log" aria-label="Mini shell demo" ref={logRef} onClick={() => inputRef.current?.focus()} style={{ maxHeight: 220, overflowY: "auto" }}>
+      <div className="terminal" role="log" aria-label="Mini shell demo" ref={logRef} onClick={() => inputRef.current?.focus()} style={{ maxHeight: 240, overflowY: "auto" }}>
         {lines.map((l, i) => <div key={i}>{l}</div>)}
-        <div>muneeb@portfolio:~$ <input ref={inputRef} aria-label="Shell command" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") run(input); }} placeholder="help" /></div>
+        <div>muneeb@portfolio:~$ <input ref={inputRef} aria-label="Shell command" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") run(input); }} placeholder="type a command, e.g. ls" /></div>
       </div>
       <button className="btn small secondary" onClick={() => run("help")}>Run help</button>
     </div>
@@ -81,15 +106,26 @@ function ShellDemo() {
 }
 
 function PaintingDemo() {
-  const [picked, setPicked] = useState(PAINTINGS[0]);
+  // No painting is pre-selected — the warmest one must be picked, not given away.
+  const [picked, setPicked] = useState<(typeof PAINTINGS)[number] | null>(null);
   const [serverNote, setServerNote] = useState("");
+  const reqId = useRef(0);
   const pick = async (painting: (typeof PAINTINGS)[number]) => {
     setPicked(painting);
+    const myReq = ++reqId.current;
     try {
       const r = await fetch("/api/painting-predict", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paintingId: painting.id }) });
+      const code = r.headers.get("X-CTF-Code") || "";
       const j = await r.json();
-      setServerNote(j.prediction ? `Server says: ${j.prediction}. Check Network.` : "");
-    } catch { setServerNote("Backend not running locally — prediction is front-end only here. Deploy on Vercel to enable the CTF check."); }
+      if (myReq !== reqId.current) return; // a newer pick already won the race
+      // Easy mode (stop 3 only): the stub shows up right here, under the result.
+      if (easyModeOn() && easyStageNow() === 3 && painting.id === "sunset" && code) {
+        setServerNote(`Ticket stub: ${code} — take it back to the CTF ticket below.`);
+        emitEasyCode(2, code);
+      } else {
+        setServerNote(j.prediction ? `Server says: ${j.prediction}.` + (painting.id === "sunset" ? " Check Network." : "") : "");
+      }
+    } catch { if (myReq === reqId.current) setServerNote("Backend not reachable right now — try again in a moment."); }
   };
   return (
     <div className="demo">
@@ -97,12 +133,12 @@ function PaintingDemo() {
       <p className="demo-note">Demo — the real model was trained in Python / scikit-learn. This is a front-end illustration of how it works. Accuracy on held-out data: 87.6%.</p>
       <div className="paint-grid">
         {PAINTINGS.map((p) => (
-          <button key={p.id} className="paint-card" aria-pressed={picked.id === p.id} onClick={() => pick(p)}>
+          <button key={p.id} className="paint-card" aria-pressed={picked?.id === p.id} onClick={() => pick(p)}>
             <span aria-hidden="true" style={{ display: "inline-block", width: 44, height: 44, borderRadius: 12, background: p.swatch, border: "2px solid #2B2118" }} /><br /><strong>{p.name}</strong>
           </button>
         ))}
       </div>
-      <p style={{ marginTop: 10 }}>The model would predict: you like <strong>{picked.style}</strong>.</p>
+      <p style={{ marginTop: 10 }}>{picked ? <>The model would predict: you like <strong>{picked.style}</strong>.</> : "Pick a painting and the model will guess what you like."}</p>
       {serverNote && <p className="demo-note">{serverNote}</p>}
     </div>
   );
@@ -120,11 +156,12 @@ function TypingDemo() {
     if (!start) setStart(Date.now());
     setValue(clipped);
     if (clipped.trim() === prompt) { setDone(true); setEnd(Date.now()); }
+    else if (done) { setDone(false); setEnd(null); }
   };
   const wpm = start && done && end ? Math.round(prompt.split(" ").length / ((end - start) / 60000)) : null;
   return (
     <div className="demo">
-      <p><strong>Try TypeTyme — 30-second typing challenge</strong></p>
+      <p><strong>Try TypeTyme — typing challenge</strong></p>
       <p className="demo-note">Mini demo — the real TypeTyme uses Gemini AI for prompts and Flask + SQL for login/scores.</p>
       <div className="typing-box">{prompt}
         <input aria-label="Type the prompt" value={value} onChange={(e) => onChange(e.target.value)} placeholder="Start typing here…" />
@@ -138,28 +175,39 @@ function PaintCanvas() {
   const ref = useRef<HTMLCanvasElement>(null);
   const [color, setColor] = useState("#E85D4A");
   const drawing = useRef(false);
+  const lastPos = useRef<{ x: number; y: number } | null>(null);
+  const clearCanvas = () => { const c = ref.current; const ctx = c?.getContext("2d"); if (c && ctx) { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height); } };
   useEffect(() => {
     const c = ref.current; if (!c) return;
     c.width = 900; c.height = 180;
     const ctx = c.getContext("2d"); if (ctx) { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height); }
   }, []);
+  const posOf = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const c = ref.current; if (!c) return null;
+    const r = c.getBoundingClientRect();
+    return { x: ((e.clientX - r.left) / r.width) * c.width, y: ((e.clientY - r.top) / r.height) * c.height };
+  };
   const draw = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const c = ref.current; if (!c || !drawing.current) return;
-    const r = c.getBoundingClientRect(); const ctx = c.getContext("2d"); if (!ctx) return;
-    const x = ((e.clientX - r.left) / r.width) * c.width;
-    const y = ((e.clientY - r.top) / r.height) * c.height;
-    ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI * 2); ctx.fill();
+    const ctx = c.getContext("2d"); const pos = posOf(e); if (!ctx || !pos) return;
+    // Draw a line from the last point, not isolated dots — fast drags stay smooth.
+    ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 20; ctx.lineCap = "round"; ctx.lineJoin = "round";
+    ctx.beginPath();
+    if (lastPos.current) { ctx.moveTo(lastPos.current.x, lastPos.current.y); ctx.lineTo(pos.x, pos.y); }
+    else { ctx.arc(pos.x, pos.y, 10, 0, Math.PI * 2); }
+    ctx.stroke(); ctx.fill();
+    lastPos.current = pos;
   };
   return (
     <div className="demo">
       <p><strong>Try PaintApp — mini canvas</strong></p>
       <p className="demo-note">Mini canvas — the real PaintApp has 10+ tools, layering, and a local LLaMA sketch helper.</p>
-      <canvas ref={ref} className="paint" aria-label="Mini drawing canvas" onPointerDown={(e) => { drawing.current = true; ref.current?.setPointerCapture(e.pointerId); draw(e); }} onPointerUp={() => { drawing.current = false; }} onPointerLeave={() => { drawing.current = false; }} onPointerMove={draw} />
+      <canvas ref={ref} className="paint" aria-label="Mini drawing canvas — press and drag to draw" onPointerDown={(e) => { drawing.current = true; lastPos.current = null; ref.current?.setPointerCapture(e.pointerId); draw(e); }} onPointerUp={() => { drawing.current = false; lastPos.current = null; }} onPointerLeave={() => { drawing.current = false; lastPos.current = null; }} onPointerMove={draw} />
       <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-        {["#E85D4A", "#F2B749", "#4A9EB8", "#7FB069", "#2B2118", "#F28482"].map((col) => (
-          <button key={col} aria-label={`Colour ${col}`} onClick={() => setColor(col)} style={{ background: col, width: 32, height: 32, borderRadius: "50%", border: color === col ? "3px solid #2B2118" : "2px solid #2B2118" }} />
+        {[["#E85D4A", "Coral"], ["#F2B749", "Honey"], ["#4A9EB8", "Teal"], ["#7FB069", "Leaf"], ["#2B2118", "Ink"], ["#F28482", "Pink"]].map(([col, name]) => (
+          <button key={col} aria-label={`Colour ${name}`} aria-pressed={color === col} onClick={() => setColor(col)} style={{ background: col, width: 32, height: 32, borderRadius: "50%", border: color === col ? "3px solid #2B2118" : "2px solid #2B2118" }} />
         ))}
-        <button className="btn small secondary" onClick={() => { const c = ref.current; c?.getContext("2d")?.clearRect(0, 0, c.width, c.height); }}>Clear</button>
+        <button className="btn small secondary" onClick={clearCanvas}>Clear</button>
       </div>
     </div>
   );
@@ -200,7 +248,7 @@ const CTF_STOPS = [
   ]},
 ] as const;
 
-function HardPanel() {
+function HardPanel({ onSwitch }: { onSwitch: () => void }) {
   const [playing, setPlaying] = useState(false);
   const [stage, setStage] = useState<number>(() => { try { return Number(localStorage.getItem("muneeb-ctf-stage") || 1); } catch { return 1; } });
   const [credits, setCredits] = useState<number>(() => { try { return Number(localStorage.getItem("muneeb-ctf-credits") || 1); } catch { return 1; } });
@@ -209,12 +257,16 @@ function HardPanel() {
   const [wrong, setWrong] = useState(0);
   const [code, setCode] = useState("");
   const [status, setStatus] = useState("");
-  const [flag, setFlag] = useState("");
+  const [flag, setFlag] = useState(() => { try { return localStorage.getItem("muneeb-ctf-flag") || ""; } catch { return ""; } });
   const [flagStatus, setFlagStatus] = useState("");
   const [won, setWon] = useState(() => { try { return localStorage.getItem("muneeb-ctf-won") === "1"; } catch { return false; } });
   const [backendDown, setBackendDown] = useState(false);
   const [actionInput, setActionInput] = useState("");
   const [actionStatus, setActionStatus] = useState("");
+  const resetCtf = () => {
+    try { ["muneeb-ctf-stage", "muneeb-ctf-credits", "muneeb-ctf-found", "muneeb-ctf-won", "muneeb-ctf-flag"].forEach((k) => localStorage.removeItem(k)); } catch {}
+    setStage(1); setCredits(1); setFound({}); setHintLevel(1); setWrong(0); setCode(""); setStatus(""); setFlag(""); setFlagStatus(""); setWon(false); setActionInput(""); setActionStatus(""); setPlaying(false);
+  };
 
   const save = (s: number, c: number, f: Record<string, string>) => {
     setStage(s); setCredits(c); setFound(f);
@@ -228,7 +280,8 @@ function HardPanel() {
   const showHint3 = () => {
     if (hintLevel >= 3) return;
     if (hint3Free) { setHintLevel(3); return; }
-    if (credits > 0) { setCredits((prev) => { const n = prev - 1; try { localStorage.setItem("muneeb-ctf-credits", String(n)); } catch {} return n; }); setHintLevel(3); }
+    if (credits > 0) { setCredits((prev) => { const n = prev - 1; try { localStorage.setItem("muneeb-ctf-credits", String(n)); } catch {} return n; }); setHintLevel(3); return; }
+    setStatus("Hint 3 is locked — earn a credit at the next savepoint, or get 2 wrong tries first.");
   };
   const advance = async () => {
     if (stage >= 6) { setStatus("All stops cleared — submit the flag below."); return; }
@@ -240,7 +293,7 @@ function HardPanel() {
       return;
     }
     const c = code.trim().toLowerCase();
-    if (!c) { setStatus("Enter the code word you found for this stop."); return; }
+    if (!c) { setStatus("Enter the code you found for this stop."); return; }
     try {
       const r = await fetch("/api/ctf/advance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage: stage - 1, code: c }) });
       const j = await r.json();
@@ -250,12 +303,13 @@ function HardPanel() {
         // Savepoint: +1 hint credit, remember the last code you found, save stage.
         save(nextStage, credits + 1, nextFound);
         setCode(""); setWrong(0); setHintLevel(1);
+        if (j.flag) { setFlag(j.flag); try { localStorage.setItem("muneeb-ctf-flag", j.flag); } catch {} }
         setStatus(nextStage === 6 ? "Last stop cleared — check Network for the flag." : `Stop ${stage} cleared. +1 hint credit.`);
       } else {
         const w = wrong + 1; setWrong(w);
-        setStatus(j.message || "Not that code word. Try a hint — Hint 3 unlocks free after 2 wrong tries.");
+        setStatus(j.message || "Not that code. Try a hint — Hint 3 unlocks free after 2 wrong tries.");
       }
-    } catch { setBackendDown(true); setStatus("Backend not reachable. Run npm run server locally, or deploy on Vercel."); }
+    } catch { setBackendDown(true); setStatus("Backend not reachable right now — try again in a moment."); }
   };
   const doAction = async () => {
     // Stops 4 and 5 are done from this panel: it POSTs for you, so you don't
@@ -266,7 +320,7 @@ function HardPanel() {
       const j = await r.json();
       if (j.correct) setActionStatus("Correct — check Network.");
       else setActionStatus(j.hint || "Not that one. Check the hint.");
-    } catch { setBackendDown(true); setActionStatus("Backend not reachable."); }
+    } catch { setBackendDown(true); setActionStatus("Backend not reachable right now — try again in a moment."); }
   };
   const submitFlag = async () => {
     if (!flag.trim()) { setFlagStatus("Enter the one flag."); return; }
@@ -275,7 +329,7 @@ function HardPanel() {
       const j = await r.json();
       if (j.correct) { setWon(true); try { localStorage.setItem("muneeb-ctf-won", "1"); } catch {} setFlagStatus("Correct — you found the one flag. Conductor status unlocked."); }
       else setFlagStatus(j.message || "Not that flag.");
-    } catch { setBackendDown(true); setFlagStatus("Backend not reachable."); }
+    } catch { setBackendDown(true); setFlagStatus("Backend not reachable right now — try again in a moment."); }
   };
 
   if (!playing) {
@@ -290,12 +344,12 @@ function HardPanel() {
     );
   }
   if (won) {
-    return <div><p><strong>You found the one flag. Conductor status unlocked.</strong></p><p className="muted">Thanks for riding the Muneeb Line.</p></div>;
+    return <div><p><strong>You found the one flag. Conductor status unlocked.</strong></p><p className="muted">Thanks for riding the Muneeb Line.</p><p><button className="btn small" onClick={resetCtf}>Play again</button> <button className="btn small secondary" onClick={onSwitch}>Switch mode</button></p></div>;
   }
   return (
     <div>
-      <p>{"●".repeat(Math.min(stage, 5))}{"○".repeat(Math.max(0, 5 - Math.min(stage, 5)))} — Stop {Math.min(stage, 5)} of 5 · {credits} hint {credits === 1 ? "credit" : "credits"}{lastFound && <span> · last stub: <code>{lastFound[1]}</code></span>}</p>
-      {backendDown && <p className="status bad">Backend not reachable in this preview. Run <code>npm run server</code> in another terminal, then reload — Vite proxies /api to localhost:3001. On Vercel it works without that step.</p>}
+      <p>{"●".repeat(Math.min(stage, 5))}{"○".repeat(Math.max(0, 5 - Math.min(stage, 5)))} — Stop {Math.min(stage, 5)} of 5 · {credits} hint {credits === 1 ? "credit" : "credits"}{lastFound && <span> · last stub: <code>{lastFound[1]}</code></span>} <button className="btn small secondary" onClick={resetCtf}>Reset CTF</button></p>
+      {backendDown && <p className="status bad">The CTF backend isn&apos;t reachable right now — try again in a moment.</p>}
       <article className="card ctf-card">
         <h3>{current.title}</h3>
         <p>{current.hints[0]}</p>
@@ -303,23 +357,31 @@ function HardPanel() {
         {hintLevel >= 3 && <p className="demo-note"><strong>Hint 3:</strong> {current.hints[2]}</p>}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
           <button className="btn small secondary" onClick={() => setHintLevel(2)} disabled={hintLevel >= 2}>Show Hint 2</button>
-          <button className="btn small secondary" onClick={showHint3} disabled={hintLevel >= 3}>{hint3Free ? "Show Hint 3 (free — 2 wrong tries)" : credits > 0 ? `Show Hint 3 (spend 1 hint credit, you have ${credits})` : "Show Hint 3 (locked — earn a credit at the next savepoint, or try twice)"}</button>
-          <button className="btn small secondary" onClick={() => { setHintLevel(3); }}>I&apos;m stuck — show me the exact step</button>
+          <button className="btn small secondary" onClick={showHint3} disabled={hintLevel >= 3 || (!hint3Free && credits === 0)}>{hint3Free ? "Show Hint 3 (free — 2 wrong tries)" : credits > 0 ? `Show Hint 3 (spend 1 hint credit, you have ${credits})` : "Show Hint 3 (locked — earn a credit at the next savepoint, or try twice)"}</button>
+          <button className="btn small secondary" onClick={showHint3} disabled={hintLevel >= 3 || (!hint3Free && credits === 0)}>I&apos;m stuck — reveal Hint 3</button>
         </div>
         {(stage === 4 || stage === 5) && (
           <div style={{ marginTop: 12 }}>
-            <label htmlFor="ctf-action">{stage === 4 ? "Radar code (the number that dropped)" : "Lost item"}</label>
-            <input id="ctf-action" className="ctf-input" value={actionInput} onChange={(e) => setActionInput(e.target.value)} placeholder="…" />
+            <label htmlFor="ctf-action">{stage === 4 ? "Radar code — just the number that dropped, no %" : "Lost item"}</label>
+            <input id="ctf-action" className="ctf-input" value={actionInput} onChange={(e) => setActionInput(e.target.value)} placeholder={stage === 4 ? "45" : "…"} />
             <button className="btn small secondary" onClick={doAction}>Send it</button>
             {actionStatus && <p className="demo-note">{actionStatus}</p>}
           </div>
         )}
-        <div style={{ marginTop: 12 }}>
-          <label htmlFor="ctf-code">Code word</label>
-          <input id="ctf-code" className="ctf-input" value={code} onChange={(e) => setCode(e.target.value)} placeholder="type the code word here" autoComplete="off" />
-          <button className="btn small" onClick={advance}>Check code — save my savepoint</button>
-          {status && <p className="status">{status}</p>}
-        </div>
+        {stage === 1 ? (
+          <div style={{ marginTop: 12 }}>
+            <p className="demo-note">Stop 1 has no code — just find the note.</p>
+            <button className="btn small" onClick={advance}>I found the note — save my stop</button>
+            {status && <p className="status">{status}</p>}
+          </div>
+        ) : (
+          <div style={{ marginTop: 12 }}>
+            <label htmlFor="ctf-code">Code</label>
+            <input id="ctf-code" className="ctf-input" value={code} onChange={(e) => setCode(e.target.value)} placeholder="type the code here" autoComplete="off" />
+            <button className="btn small" onClick={advance}>Check code — save my savepoint</button>
+            {status && <p className="status">{status}</p>}
+          </div>
+        )}
       </article>
       <div style={{ marginTop: 14 }}>
         <h3>The one flag</h3>
@@ -338,76 +400,68 @@ const GITHUB_URL = "https://github.com/hyneeb";
 const RESUME_URL = "/resume.pdf";
 const EMAIL = "muneeb.hyder@mail.utoronto.ca";
 const ROUTES: Record<string, { label: string; blurb: string; first: string; line: LineId | "all" }> = {
-  systems: { label: "Backend / Systems", blurb: "Unix Shell > Radar > SportsDeck caching", first: "unix-shell", line: "systems" },
-  ai: { label: "AI / ML", blurb: "TypeTyme > PaintApp > Classifier > Live AI", first: "typetyme", line: "intelligence" },
+  systems: { label: "Backend / Systems", blurb: "Unix Shell > Radar", first: "unix-shell", line: "systems" },
+  ai: { label: "AI / ML", blurb: "TypeTyme > PaintApp > Live AI > Painting Classifier", first: "typetyme", line: "intelligence" },
   product: { label: "Frontend / Product", blurb: "CampusClaims > Investi > Bellwoods > SportsDeck", first: "campusclaims", line: "product" },
   unsure: { label: "Not sure — best route", blurb: "UofT > CampusClaims > Unix Shell > Radar > Hire Me", first: "uoft", line: "all" },
 };
 
 
-// --- Easy mode: same chain, no DevTools. Everything happens in this panel.
-// The code words are shown right here after you do the simple thing —
-// that's the whole point for non-technical players. Backend still validates.
+// --- Easy mode: same chain, no DevTools — but you still have to dig a little.
+// The panel only tells you where to go and what to do, in one short sentence.
+// The stub is revealed where you found it — in the real station/demo — and
+// finding it is what advances you. No panel button does the stop for you.
 function EasyPanel({ onSwitch }: { onSwitch: () => void }) {
   const [stage, setStage] = useState<number>(() => { try { return Number(localStorage.getItem("muneeb-ctf-stage-easy") || 1); } catch { return 1; } });
   const [found, setFound] = useState<Record<string, string>>(() => { try { return JSON.parse(localStorage.getItem("muneeb-ctf-found-easy") || "{}"); } catch { return {}; } });
   const [note, setNote] = useState("");
-  const [flag, setFlag] = useState("");
+  const [flag, setFlag] = useState(() => { try { return localStorage.getItem("muneeb-ctf-flag-easy") || ""; } catch { return ""; } });
   const [flagStatus, setFlagStatus] = useState("");
   const [won, setWon] = useState(() => { try { return localStorage.getItem("muneeb-ctf-won-easy") === "1"; } catch { return false; } });
   const [backendDown, setBackendDown] = useState(false);
   const saveStage = (s: number, f: Record<string, string>) => {
-    setStage(s); setFound(f);
+    setStage(s); setFound(f); setNote("");
     try { localStorage.setItem("muneeb-ctf-stage-easy", String(s)); localStorage.setItem("muneeb-ctf-found-easy", JSON.stringify(f)); } catch {}
   };
+  const resetCtf = () => {
+    try { ["muneeb-ctf-stage-easy", "muneeb-ctf-found-easy", "muneeb-ctf-won-easy", "muneeb-ctf-flag-easy"].forEach((k) => localStorage.removeItem(k)); } catch {}
+    setStage(1); setFound({}); setNote(""); setFlag(""); setFlagStatus(""); setWon(false);
+  };
   const advanceWith = async (backendStage: number, code: string) => {
+    // Read found from storage, not from a stale closure — this is called from window events.
+    const currentFound = (() => { try { return JSON.parse(localStorage.getItem("muneeb-ctf-found-easy") || "{}"); } catch { return {}; } })();
     try {
       const r = await fetch("/api/ctf/advance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage: backendStage, code }) });
       const j = await r.json();
       if (!j.correct) { setNote("Hmm, that didn't work. Try again."); return; }
-      const nextFound = { ...found, [`stop-${backendStage + 1}`]: code };
+      const nextFound = { ...currentFound, [`stop-${backendStage + 1}`]: code };
       if (j.flag) {
         setFlag(j.flag);
+        try { localStorage.setItem("muneeb-ctf-flag-easy", j.flag); } catch {}
         saveStage(6, nextFound);
         setNote("Last stop cleared — here's your flag, right here:");
       } else {
         saveStage(backendStage + 2, nextFound);
         setNote(`Ticket found: ${code} — saved! On to the next stop.`);
       }
-    } catch { setBackendDown(true); setNote("Backend not reachable. Run npm run server locally, or deploy on Vercel."); }
+    } catch { setBackendDown(true); setNote("Backend not reachable right now — try again in a moment."); }
   };
-  const doShell = async () => {
-    try {
-      const r = await fetch("/api/shell", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ command: "cat ticket-1.txt" }) });
-      const j = await r.json();
-      if (j.code) await advanceWith(1, j.code); else setNote("No ticket in the shell. Try again.");
-    } catch { setBackendDown(true); }
-  };
-  const doPainting = async (id: string) => {
-    if (id !== "sunset") { setNote("Not the warmest one. Try again."); return; }
-    try {
-      const r = await fetch("/api/painting-predict", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paintingId: id }) });
-      const code = r.headers.get("X-CTF-Code") || "";
-      if (code) await advanceWith(2, code); else setNote("Hmm, no code came back. Try again.");
-    } catch { setBackendDown(true); }
-  };
-  const doRadar = async (v: string) => {
-    if (v !== "45") { setNote("Not that number. Check the Radar station."); return; }
-    try {
-      const r = await fetch("/api/radar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: v }) });
-      const j = await r.json();
-      if (j.code) await advanceWith(3, j.code);
-    } catch { setBackendDown(true); }
-  };
-  const doLost = async (item: string) => {
-    if (item !== "backpack") { setNote("Not that one. What did CampusClaims help find?"); return; }
-    try {
-      const r = await fetch("/api/lost-found", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ item }) });
-      const j = await r.json();
-      if (j.code) await advanceWith(4, j.code);
-    } catch { setBackendDown(true); }
-  };
+  const advanceRef = useRef(advanceWith);
+  advanceRef.current = advanceWith;
+  useEffect(() => {
+    const onCode = (e: Event) => { const d = (e as CustomEvent).detail; if (d?.code) advanceRef.current(d.stage, d.code); };
+    const onPeek = () => { const f = (() => { try { return JSON.parse(localStorage.getItem("muneeb-ctf-found-easy") || "{}"); } catch { return {}; } })(); saveStage(2, f); setNote("The note says: the conductor lost a ticket. First stop: where commands live."); };
+    window.addEventListener(EASY_CODE_EVENT, onCode);
+    window.addEventListener(EASY_PEEK_EVENT, onPeek);
+    return () => { window.removeEventListener(EASY_CODE_EVENT, onCode); window.removeEventListener(EASY_PEEK_EVENT, onPeek); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent(EASY_STAGE_EVENT, { detail: { mode: "easy", stage } }));
+    return () => { window.dispatchEvent(new CustomEvent(EASY_STAGE_EVENT, { detail: { mode: null, stage: 1 } })); };
+  }, [stage]);
   const submitFlag = async () => {
+    if (!flag.trim()) { setFlagStatus("No flag to submit yet — clear stop 5 first."); return; }
     try {
       const r = await fetch("/api/submit-flag", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ challengeId: "final", flag }) });
       const j = await r.json();
@@ -415,46 +469,67 @@ function EasyPanel({ onSwitch }: { onSwitch: () => void }) {
       else setFlagStatus("Not that flag.");
     } catch { setBackendDown(true); }
   };
-  if (won) return <div><p><strong>You found the one flag. Conductor status unlocked.</strong></p><button className="btn small secondary" onClick={onSwitch}>Switch mode</button></div>;
+  if (won) return <div><p><strong>You found the one flag. Conductor status unlocked.</strong></p><p><button className="btn small" onClick={resetCtf}>Play again</button> <button className="btn small secondary" onClick={onSwitch}>Switch mode</button></p></div>;
   const dots = "●".repeat(Math.min(stage, 5)) + "○".repeat(Math.max(0, 5 - Math.min(stage, 5)));
+  const clue = (title: string, text: string, station: string, btn: string) => (
+    <article className="card ctf-card"><h3>{title}</h3><p>{text}</p>
+      <button className="btn small" onClick={() => goToStation(station)}>{btn}</button>
+      {note && <p className="demo-note">{note}</p>}</article>
+  );
   return (
     <div>
-      <p>{dots} — Stop {Math.min(stage, 5)} of 5 · Easy mode, no DevTools needed <button className="btn small secondary" onClick={onSwitch}>Switch mode</button></p>
-      {backendDown && <p className="status bad">Backend not reachable. Run <code>npm run server</code>, then reload.</p>}
-      {stage === 1 && (
-        <article className="card ctf-card"><h3>Stop 1 — Peek</h3><p>Psst — the page is hiding a note.</p>
-          <button className="btn small" onClick={() => { setNote("The note says: the conductor lost a ticket. First stop: where commands live."); saveStage(2, found); }}>Peek at the note</button>
-          {note && <p className="demo-note">{note}</p>}</article>
-      )}
-      {stage === 2 && (
-        <article className="card ctf-card"><h3>Stop 2 — Shell</h3><p>The shell keeps a lost ticket. One file in there doesn't belong.</p>
-          <button className="btn small" onClick={doShell}>Check the shell</button>
-          {note && <p className="demo-note">{note}</p>}</article>
-      )}
-      {stage === 3 && (
-        <article className="card ctf-card"><h3>Stop 3 — Painting</h3><p>Warmest wins. Pick one:</p>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{PAINTINGS.map((pt) => <button key={pt.id} className="btn small secondary" onClick={() => doPainting(pt.id)}>{pt.name}</button>)}</div>
-          {note && <p className="demo-note">{note}</p>}</article>
-      )}
-      {stage === 4 && (
-        <article className="card ctf-card"><h3>Stop 4 — Radar</h3><p>By how much did radar incidents drop?</p>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{["20%", "45%", "80%"].map((v) => <button key={v} className="btn small secondary" onClick={() => doRadar(v.replace("%", ""))}>{v}</button>)}</div>
-          {note && <p className="demo-note">{note}</p>}</article>
-      )}
-      {stage === 5 && (
-        <article className="card ctf-card"><h3>Stop 5 — Lost &amp; Found</h3><p>What did a student lose on campus?</p>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{["backpack", "phone", "laptop"].map((v) => <button key={v} className="btn small secondary" onClick={() => doLost(v)}>{v}</button>)}</div>
-          {note && <p className="demo-note">{note}</p>}</article>
-      )}
+      <p>{dots} — Stop {Math.min(stage, 5)} of 5 · Easy mode, no DevTools needed <button className="btn small secondary" onClick={onSwitch}>Switch mode</button> <button className="btn small secondary" onClick={resetCtf}>Reset CTF</button></p>
+      {backendDown && <p className="status bad">Backend not reachable right now — try again in a moment.</p>}
+      {stage === 1 && clue("Stop 1 — Peek", "The conductor left a note pinned to Muneeb Central. Go open that station and read it.", "muneeb-central", "Go to Muneeb Central")}
+      {stage === 2 && clue("Stop 2 — Shell", "Head to the Custom Unix Shell. Run ls, spot the file that doesn't belong, then cat ticket-1.txt. The stub pops up right in the shell.", "unix-shell", "Go to the Shell")}
+      {stage === 3 && clue("Stop 3 — Painting", "Go to the Painting Classifier and pick the warmest painting. The stub appears under the result.", "painting-classifier", "Go to the Classifier")}
+      {stage === 4 && clue("Stop 4 — Radar", "Open the Radar station and read its metrics. One number dropped — type just that number into the little box on that station.", "radar", "Go to Radar")}
+      {stage === 5 && clue("Stop 5 — Lost & Found", "Open CampusClaims. Someone lost something on campus — type what it was into the box on that station.", "campusclaims", "Go to CampusClaims")}
       {stage >= 6 && (
         <article className="card ctf-card"><h3>The one flag</h3><p>Here it is — no hunting in Network needed:</p>
-          <p><code>{flag}</code></p>
+          <p><code>{flag || "…"}</code></p>
           <button className="btn small" onClick={submitFlag}>Submit the flag</button>
           {flagStatus && <p className={`status ${flagStatus.startsWith("Correct") ? "ok" : "bad"}`}>{flagStatus}</p>}</article>
       )}
       {Object.keys(found).length > 0 && <p className="muted">Stubs saved: {Object.values(found).join(" · ")}</p>}
     </div>
   );
+}
+
+// --- Easy clue boxes that live on the stations themselves, not in the CTF panel.
+// They only appear in Easy mode, at the right stop, on the right station.
+function EasyStationClue({ stationId, mission }: { stationId: string; mission: { mode: string | null; stage: number } }) {
+  const [input, setInput] = useState("");
+  const [msg, setMsg] = useState("");
+  if (mission.mode !== "easy") return null;
+  if (mission.stage === 1 && stationId === "muneeb-central") {
+    return (<div className="demo"><p><strong>Conductor&apos;s note</strong></p><p className="demo-note">Pinned here by the conductor: “I lost a ticket. First stop: where commands live — the shell.”</p><button className="btn small" onClick={() => window.dispatchEvent(new Event(EASY_PEEK_EVENT))}>Found the note — save my stop</button></div>);
+  }
+  if (mission.stage === 4 && stationId === "radar") {
+    const check = async () => {
+      const v = input.trim().replace(/%/g, "");
+      try {
+        const r = await fetch("/api/radar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: v }) });
+        const j = await r.json();
+        if (j.correct && j.code) { setMsg(`Ticket stub: ${j.code} — saved!`); emitEasyCode(3, j.code); }
+        else setMsg(j.hint || "Not that number. Read the metrics on this station.");
+      } catch { setMsg("Backend not reachable right now — try again in a moment."); }
+    };
+    return (<div className="demo"><p><strong>Lost ticket — Radar</strong></p><p className="demo-note">One number on this station dropped. Type just the number and the stub shows up.</p><input aria-label="Radar number" className="ctf-input" value={input} onChange={(e) => setInput(e.target.value)} placeholder="45" /><button className="btn small" onClick={check}>Check it</button>{msg && <p className="demo-note">{msg}</p>}</div>);
+  }
+  if (mission.stage === 5 && stationId === "campusclaims") {
+    const check = async () => {
+      const v = input.trim().toLowerCase().replace(/^(a|an|the)\s+/, "").replace(/s$/, "");
+      try {
+        const r = await fetch("/api/lost-found", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ item: v }) });
+        const j = await r.json();
+        if (j.correct && j.code) { setMsg(`Ticket stub: ${j.code} — saved!`); emitEasyCode(4, j.code); }
+        else setMsg(j.hint || "Not that one. What did CampusClaims help find?");
+      } catch { setMsg("Backend not reachable right now — try again in a moment."); }
+    };
+    return (<div className="demo"><p><strong>Lost ticket — CampusClaims</strong></p><p className="demo-note">Someone lost something on campus. Type what it was.</p><input aria-label="Lost item" className="ctf-input" value={input} onChange={(e) => setInput(e.target.value)} placeholder="…" /><button className="btn small" onClick={check}>Check it</button>{msg && <p className="demo-note">{msg}</p>}</div>);
+  }
+  return null;
 }
 
 function CtfPanel() {
@@ -464,12 +539,12 @@ function CtfPanel() {
   const choose = (m: "easy" | "hard") => { setMode(m); try { localStorage.setItem("muneeb-ctf-mode", m); } catch {} };
   const clearMode = () => { setMode(null); try { localStorage.removeItem("muneeb-ctf-mode"); } catch {} };
   if (mode === "easy") return <EasyPanel onSwitch={clearMode} />;
-  if (mode === "hard") return <div><p><button className="btn small secondary" onClick={clearMode}>Switch mode</button></p><HardPanel /></div>;
+  if (mode === "hard") return <div><p><button className="btn small secondary" onClick={clearMode}>Switch mode</button></p><HardPanel onSwitch={clearMode} /></div>;
   return (
     <div>
       <p><strong>One flag. Five stops. Pick your ride.</strong></p>
       <div className="ctf-grid">
-        <article className="card ctf-card"><h3>Easy — for everyone</h3><p>No DevTools, no Network tab. Everything happens right here, with friendly buttons and multiple choice. Still the same chain, still one flag.</p><button className="btn small" onClick={() => choose("easy")}>Play easy</button></article>
+        <article className="card ctf-card"><h3>Easy — for everyone</h3><p>No DevTools, no Network tab. You&apos;ll hop around the site — one obvious thing at each stop, and the stub shows up where you found it. Still the same chain, still one flag.</p><button className="btn small" onClick={() => choose("easy")}>Play easy</button></article>
         <article className="card ctf-card"><h3>Hard — the real thing</h3><p>Inspect element, Network tab, response headers. Hints are short riddles, codes are hidden in POST responses. For people who like to dig.</p><button className="btn small" onClick={() => choose("hard")}>Play hard</button></article>
       </div>
     </div>
@@ -484,17 +559,35 @@ export default function App() {
   const [filter, setFilter] = useState<string>("all");
   const [route, setRoute] = useState<string | null>(null);
   const [touring, setTouring] = useState(false);
+  const [tourDone, setTourDone] = useState(false);
   const [copied, setCopied] = useState(false);
-  const resetView = () => { setFilter("all"); setRoute(null); setTouring(false); setSelectedId("muneeb-central"); window.history.replaceState(null, "", window.location.pathname); };
+  const [copyFailed, setCopyFailed] = useState(false);
+  const [easyMission, setEasyMission] = useState<{ mode: string | null; stage: number }>(() => {
+    try { return { mode: localStorage.getItem("muneeb-ctf-mode") === "easy" ? "easy" : null, stage: Number(localStorage.getItem("muneeb-ctf-stage-easy") || 1) }; }
+    catch { return { mode: null, stage: 1 }; }
+  });
+  useEffect(() => {
+    const onStage = (e: Event) => { const d = (e as CustomEvent).detail; setEasyMission({ mode: d?.mode ?? null, stage: d?.stage ?? 1 }); };
+    const onGoto = (e: Event) => { const id = (e as CustomEvent).detail?.id; if (typeof id === "string" && STATIONS.some((st) => st.id === id)) { openStation(id); document.getElementById("map")?.scrollIntoView({ behavior: "smooth" }); } };
+    const onHash = () => { const h = window.location.hash.replace("#station/", ""); if (STATIONS.some((st) => st.id === h)) setSelectedId(h); };
+    window.addEventListener(EASY_STAGE_EVENT, onStage);
+    window.addEventListener(EASY_GOTO_EVENT, onGoto);
+    window.addEventListener("hashchange", onHash);
+    return () => { window.removeEventListener(EASY_STAGE_EVENT, onStage); window.removeEventListener(EASY_GOTO_EVENT, onGoto); window.removeEventListener("hashchange", onHash); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const resetView = () => { setFilter("all"); setRoute(null); setTouring(false); setTourDone(false); setSelectedId("muneeb-central"); window.history.replaceState(null, "", window.location.pathname); };
   const copyLink = async () => {
     const url = `${window.location.origin}${window.location.pathname}#station/${selectedId}`;
-    try { await navigator.clipboard.writeText(url); }
+    let ok = false;
+    try { await navigator.clipboard.writeText(url); ok = true; }
     catch {
       const ta = document.createElement("textarea"); ta.value = url; document.body.appendChild(ta); ta.select();
-      try { document.execCommand("copy"); } catch {}
+      try { ok = document.execCommand("copy"); } catch { ok = false; }
       ta.remove();
     }
-    setCopied(true); window.setTimeout(() => setCopied(false), 2000);
+    setCopied(ok); setCopyFailed(!ok);
+    window.setTimeout(() => { setCopied(false); setCopyFailed(false); }, 3000);
   };
   const selected: Station = STATIONS.find((s) => s.id === selectedId) || STATIONS[0];
   // Which lines are lit right now? A line filter lights that line only.
@@ -502,7 +595,7 @@ export default function App() {
   // never fully off, so the map doesn't feel broken when you click around.
   const isLineFilter = ["systems", "intelligence", "product", "journey"].includes(filter);
   const litLines: LineId[] = isLineFilter ? [filter as LineId] : selected.lineIds;
-  const lineOpacity = (id: LineId) => (litLines.includes(id) ? 1 : isLineFilter ? 0.18 : 0.45);
+  const lineOpacity = (id: LineId) => (litLines.includes(id) ? 1 : isLineFilter ? 0.35 : 0.45);
   const lineWidth = (id: LineId) => (litLines.includes(id) ? 11 : 9);
 
   const visible = (s: Station) => {
@@ -515,8 +608,10 @@ export default function App() {
 
   const openStation = (id: string) => {
     setSelectedId(id);
-    window.history.replaceState(null, "", `#station/${id}`);
+    window.history.pushState(null, "", `#station/${id}`);
+    if (window.innerWidth < 1024) document.getElementById("station-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
+  const openStationFromMap = (id: string) => { setRoute(null); openStation(id); };
 
   // Next stop follows the tour order, not the raw data order — that was confusing.
   const nextStation = () => {
@@ -525,14 +620,15 @@ export default function App() {
     openStation(nextId);
   };
 
-  const startTour = () => { setTouring(true); openStation(TOUR_ORDER[0]); };
+  const startTour = () => { setTouring(true); setTourDone(false); openStation(TOUR_ORDER[0]); };
   const tourNext = () => {
     const current = TOUR_ORDER.indexOf(selectedId);
-    const n = current + 1;
-    if (n >= TOUR_ORDER.length) { setTouring(false); return; }
+    const n = current < 0 ? 0 : current + 1;
+    if (n >= TOUR_ORDER.length) { setTouring(false); setTourDone(true); return; }
     openStation(TOUR_ORDER[n]);
   };
   const tourPos = TOUR_ORDER.indexOf(selectedId) + 1;
+  const tourLabel = tourPos > 0 ? `Next stop (${tourPos}/${TOUR_ORDER.length})` : "Next stop";
 
   // Newest first, by tour order — not by sorting date strings, which is wrong.
   const experiences = STATIONS.filter((s) => s.type === "experience").sort((a, b) => TOUR_ORDER.indexOf(b.id) - TOUR_ORDER.indexOf(a.id));
@@ -576,13 +672,13 @@ export default function App() {
                 ))}
               </div>
               <div className="filters" role="group" aria-label="Filter stations">
-                {["all", "systems", "intelligence", "product", "experience", "projects"].map((f) => (
+                {["all", "systems", "intelligence", "product", "journey", "experience", "projects"].map((f) => (
                   <button key={f} className="filter" aria-pressed={filter === f} onClick={() => setFilter(f)}>{f === "all" ? "All lines" : f[0].toUpperCase() + f.slice(1)}</button>
                 ))}
                 <button className="filter" onClick={resetView}>Reset view</button>
               </div>
               <div className="map-wrap">
-                <svg className="map" viewBox="0 0 1200 700" role="img" aria-label="Interactive transit map of Muneeb Hyder's career, with Systems, Intelligence and Product lines all meeting at Muneeb Central">
+                <svg className="map" viewBox="0 0 1200 700" role="group" aria-label="Interactive transit map of Muneeb Hyder's career, with Systems, Intelligence and Product lines all meeting at Muneeb Central">
                   <rect x="0" y="668" width="1200" height="32" fill="#A8D8EA" opacity="0.55" />
                   <text x="30" y="690" fontSize="14" fill="#2B2118">Lake Ontario</text>
                   <g aria-hidden="true" stroke="#2B2118" strokeWidth="2" fill="none">
@@ -599,17 +695,19 @@ export default function App() {
                   <path d="M120,360 H860" stroke="#E85D4A" strokeWidth={lineWidth("systems")} strokeLinecap="round" fill="none" opacity={lineOpacity("systems")} />
                   <path d="M600,120 V610" stroke="#F2B749" strokeWidth={lineWidth("intelligence")} strokeLinecap="round" fill="none" opacity={lineOpacity("intelligence")} />
                   <path d="M220,200 L420,275 L600,360 L800,450 L980,540" stroke="#4A9EB8" strokeWidth={lineWidth("product")} strokeLinecap="round" strokeLinejoin="round" fill="none" opacity={lineOpacity("product")} />
+                  <g aria-hidden="true" opacity={visible(selected) ? 1 : 0.45}><circle cx={selected.x} cy={selected.y} r="26" fill="none" stroke="#2B2118" strokeWidth="2.5" strokeDasharray="5 4" /></g>
                   {STATIONS.map((s) => {
                     const dim = !visible(s);
                     const color = LINES[s.lineIds[0]].color;
-                    const labelAbove = s.y < 200 || s.id === "painting-classifier" || s.id === "hire-me";
+                    const labelAbove = s.y < 200 || s.id === "painting-classifier" || s.id === "hire-me" || s.id === "live-ai";
                     return (
                       <g key={s.id} className="station" role="button" tabIndex={0}
-                        aria-label={`${s.name} station, ${LINES[s.lineIds[0]].name}, ${s.type}, ${s.dates}`}
-                        opacity={dim ? 0.25 : 1}
-                        onClick={() => openStation(s.id)}
-                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openStation(s.id); } }}>
-                        {s.isInterchange && <circle className="core" cx={s.x} cy={s.y} r="21" fill="#fff" stroke={color} strokeWidth="4" />}
+                        aria-label={`${s.name} station, ${LINES[s.lineIds[0]].name}, ${s.type}, ${s.dates}${selectedId === s.id ? ", selected" : ""}`}
+                        aria-current={selectedId === s.id ? true : undefined}
+                        opacity={dim ? 0.45 : 1}
+                        onClick={() => openStationFromMap(s.id)}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openStationFromMap(s.id); } }}>
+                        {s.isInterchange && s.id !== "muneeb-central" && <circle className="core" cx={s.x} cy={s.y} r="21" fill="#fff" stroke={color} strokeWidth="4" />}
                         {s.id === "muneeb-central" && <circle className="core" cx={s.x} cy={s.y} r="24" fill="#fff" stroke="#2B2118" strokeWidth="3" />}
                         <circle className="core" cx={s.x} cy={s.y} r={s.id === "muneeb-central" ? 16 : 13} fill={s.id === "muneeb-central" ? "#2B2118" : color} stroke="#fff" strokeWidth="3" />
                         <g transform={`translate(${s.x - 11}, ${labelAbove ? s.y - 42 : s.y + 20})`}>
@@ -619,10 +717,9 @@ export default function App() {
                       </g>
                     );
                   })}
-                  <g aria-hidden="true" opacity={visible(selected) ? 1 : 0.25}><circle cx={selected.x} cy={selected.y} r="28" fill="none" stroke="#2B2118" strokeWidth="3" strokeDasharray="5 4" /></g>
                 </svg>
               </div>
-              <p className="muted" style={{ marginTop: 10 }}>Tip: use Tab + Enter to open stations with a keyboard. <button className="btn small secondary" onClick={startTour}>Take the 2-minute tour</button> {touring && <button className="btn small" onClick={tourNext}>Next stop ({tourPos}/{TOUR_ORDER.length})</button>} {touring && <button className="btn small secondary" onClick={() => setTouring(false)}>Exit tour</button>}</p>
+              <p className="muted" style={{ marginTop: 10 }}>Tip: use Tab + Enter to open stations with a keyboard. <button className="btn small secondary" onClick={startTour}>Take the guided tour</button> {touring && <button className="btn small" onClick={tourNext}>{tourLabel}</button>} {touring && <button className="btn small secondary" onClick={() => setTouring(false)}>Exit tour</button>} {tourDone && <span>Tour complete — you&apos;ve seen all {TOUR_ORDER.length} stops. <button className="btn small secondary" onClick={startTour}>Ride it again</button></span>}</p>
             </div>
 
             <aside className="card panel" id="station-panel" aria-live="polite" aria-label="Station details">
@@ -637,14 +734,15 @@ export default function App() {
                 </div>
               )}
               <div className="tags">{selected.tech.map((t) => <span className="tag" key={t}>{t}</span>)}</div>
+              <EasyStationClue key={selectedId} stationId={selectedId} mission={easyMission} />
               {selected.demoType === "shell" && <ShellDemo />}
               {selected.demoType === "painting" && <PaintingDemo />}
               {selected.demoType === "typing" && <TypingDemo />}
               {selected.demoType === "paint" && <PaintCanvas />}
               <div className="panel-actions">
-                <a className="btn small" href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub</a>
+                <a className="btn small" href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub profile</a>
                 <button className="btn small secondary" onClick={nextStation}>Next stop</button>
-                <button className="btn small secondary" onClick={copyLink} aria-live="polite">{copied ? "Copied!" : "Copy station link"}</button>
+                <button className="btn small secondary" onClick={copyLink} aria-live="polite">{copied ? "Copied!" : copyFailed ? "Copy failed — copy the URL from the address bar" : "Copy station link"}</button>
               </div>
             </aside>
           </div>
@@ -672,12 +770,30 @@ export default function App() {
         <section className="section wrap" id="list" aria-labelledby="list-h">
           <h2 id="list-h">Or view as a list — no map needed</h2>
           <p className="muted">Same content as the map, for phones, screen readers, and anyone in a hurry.</p>
+          <h3>Education</h3>
+          {STATIONS.filter((s) => s.type === "education").map((s) => (
+            <article className="card list-item" key={s.id}>
+              <h3><StationIcon kind={s.icon} size={22} /> {s.name} — {s.role}</h3>
+              <p><strong>{s.org} • {s.dates}</strong></p>
+              <p>{s.oneLiner}</p>
+              <ul>{s.bullets.map((b, i) => <li key={i}>{b}</li>)}</ul>
+            </article>
+          ))}
+          <h3>About</h3>
+          {STATIONS.filter((s) => s.type === "about").map((s) => (
+            <article className="card list-item" key={s.id}>
+              <h3><StationIcon kind={s.icon} size={22} /> {s.name} — {s.dates}</h3>
+              <p>{s.oneLiner}</p>
+              <ul>{s.bullets.map((b, i) => <li key={i}>{b}</li>)}</ul>
+            </article>
+          ))}
           <h3>Experience — newest first</h3>
           {experiences.map((s) => (
             <article className="card list-item" key={s.id}>
               <h3><StationIcon kind={s.icon} size={22} /> {s.name} — {s.role}</h3>
               <p><strong>{s.org} • {s.dates}</strong></p>
               <ul>{s.bullets.map((b, i) => <li key={i}>{b}</li>)}</ul>
+              {s.metrics && (<div className="metrics" aria-label="Key results">{s.metrics.map((m) => <div className="ticket" key={m.label}><b>{m.value}</b><span>{m.label}</span></div>)}</div>)}
               <div className="tags">{s.tech.map((t) => <span className="tag" key={t}>{t}</span>)}</div>
             </article>
           ))}
@@ -687,6 +803,7 @@ export default function App() {
               <h3><StationIcon kind={s.icon} size={22} /> {s.name} — {s.dates}</h3>
               <p>{s.oneLiner}</p>
               <ul>{s.bullets.map((b, i) => <li key={i}>{b}</li>)}</ul>
+              {s.metrics && (<div className="metrics" aria-label="Key results">{s.metrics.map((m) => <div className="ticket" key={m.label}><b>{m.value}</b><span>{m.label}</span></div>)}</div>)}
               <div className="tags">{s.tech.map((t) => <span className="tag" key={t}>{t}</span>)}</div>
             </article>
           ))}
@@ -722,7 +839,7 @@ export default function App() {
               <a className="btn secondary" href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub</a>
               <a className="btn secondary" href={RESUME_URL}>Download Resume PDF</a>
             </div>
-            <p className="muted">{EMAIL} • (647) 762-9037 • github.com/hyneeb</p>
+            <p className="muted">{EMAIL} • <a href="tel:+16477629037">(647) 762-9037</a> • github.com/hyneeb</p>
           </div>
         </section>
       </main>

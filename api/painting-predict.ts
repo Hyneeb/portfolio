@@ -6,7 +6,9 @@ export default async function handler(req: any, res: any) {
   if (req.method !== "POST") return json(res, 405, { error: "POST only" });
   const id = String(req.body?.paintingId || "");
   if (id === "sunset") {
-    res.setHeader("X-CTF-Code", getCode(2));
+    const code = getCode(2);
+    if (!code) return json(res, 500, { error: "CTF is not configured — set CTF_CODE_2 on Vercel." });
+    res.setHeader("X-CTF-Code", code);
     res.setHeader("X-CTF-Hint", "The code was in the response headers, not the body.");
     return json(res, 200, { paintingId: id, prediction: "warm, high-contrast landscapes", note: "Check the response headers." });
   }

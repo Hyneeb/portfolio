@@ -69,7 +69,7 @@ export const STATIONS: Station[] = [
   {
     id: "campusclaims", name: "CampusClaims", lineIds: ["product"], type: "project",
     org: "Personal Project", role: "Campus lost & found", dates: "May 2025",
-    oneLiner: "Lost something on campus? 300+ UofT students used this to get it back — 72% of the time.",
+    oneLiner: "Lost something on campus? 300+ students used this to get it back — 72% of the time.",
     bullets: [
       "Built a campus lost & found platform adopted by 300+ students with a 72% recovery rate.",
       "Designed a matching and recommendation system surfacing relevant reports.",
@@ -147,9 +147,9 @@ export const STATIONS: Station[] = [
   {
     id: "sportsdeck", name: "SportsDeck", shortName: "SportsDeck", lineIds: ["product"], type: "project",
     org: "Sports Fan Platform", role: "Full-stack fan platform", dates: "Mar 2026",
-    oneLiner: "A fan platform for Premier League fans — live scores, forums, and fast loads, even on free-tier limits.",
+    oneLiner: "Live scores, forums, and fast loads for football fans, even on free-tier limits.",
     bullets: [
-      "Built a full-stack Premier League fan platform with real-time match data and forums, deployed on AWS via Docker.",
+      "Built a full-stack sports fan platform with real-time match data and forums, deployed on AWS via Docker.",
       "Implemented JWT auth with Google OAuth, role-based moderation, and AI sentiment analysis, reducing manual content review by 80%.",
       "Designed an API caching layer maintaining sub-second loads across 20+ endpoints within free-tier rate limits.",
     ],
@@ -216,7 +216,7 @@ export const STATIONS: Station[] = [
 ];
 
 export const TOUR_ORDER = [
-  "uoft", "typetyme", "paintapp", "campusclaims", "unix-shell", "investi",
+  "uoft", "typetyme", "paintapp", "campusclaims", "unix-shell", "muneeb-central", "investi",
   "bellwoods", "live-ai", "sportsdeck", "painting-classifier", "radar", "hire-me",
 ];
 

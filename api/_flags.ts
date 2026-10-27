@@ -21,7 +21,11 @@ export function hashFlag(flag: string): string {
 export function getCode(stage: number): string {
   const env = { 1: "CTF_CODE_1", 2: "CTF_CODE_2", 3: "CTF_CODE_3", 4: "CTF_CODE_4" } as Record<number, string>;
   const dev = { 1: "all-aboard", 2: "warm-sunset", 3: "forty-five", 4: "found-it" } as Record<number, string>;
-  return process.env[env[stage]] || dev[stage] || "";
+  // Dev defaults are local-only. In production an unset code is NOT configured —
+  // never silently fall back to values that are in the public repo.
+  if (process.env[env[stage]]) return process.env[env[stage]] as string;
+  if (process.env.NODE_ENV === "production") return "";
+  return dev[stage] || "";
 }
 export function isCorrectCode(stage: number, code: string): boolean {
   return hashFlag(code.toLowerCase()) === hashFlag(getCode(stage).toLowerCase());
@@ -51,8 +55,9 @@ export function isCorrect(id: ChallengeId, submitted: string): boolean {
   }
 }
 
-// Simple in-memory rate limit: 20 attempts / IP / minute. Vercel functions are
-// stateless, so this is per-instance only — good enough for a portfolio CTF.
+// Simple in-memory rate limit: 20 attempts / IP / minute per endpoint on Vercel
+// (each function has its own Map), shared across endpoints on the local server.
+// Good enough for a portfolio CTF.
 const attempts = new Map<string, { count: number; reset: number }>();
 export function rateLimited(ip: string): boolean {
   const now = Date.now();
