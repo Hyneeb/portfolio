@@ -38,6 +38,7 @@ section[id]{scroll-margin-top:92px}
 .filters{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
 .filter{border:2px solid var(--ink);background:#fff;border-radius:999px;padding:7px 13px;font-weight:800}
 .filters a.filter{text-decoration:none;color:var(--ink)}
+.tags a.tag{text-decoration:none;color:var(--ink)}
 .filter[aria-pressed="true"]{background:var(--ink);color:#fff}
 .map-wrap{position:relative;overflow-x:auto}
 svg.map{width:100%;height:auto;display:block;background:linear-gradient(#FFF8E7,#FFF3D6);border:3px solid var(--ink);border-radius:18px}
