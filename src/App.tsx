@@ -238,6 +238,7 @@ export default function App() {
             <a className="filter" href="#top">Top ↑</a>
           </div>
           <h3 id="list-education">Education</h3>
+          <div className="filters"><a className="filter" href="#list-about">Jump to the next section ↓</a></div>
           {STATIONS.filter((s) => s.type === "education").map((s) => (
             <article className="card list-item" key={s.id}>
               <h3><StationIcon kind={s.icon} size={22} /> {s.name}, {s.role}</h3>
@@ -246,8 +247,8 @@ export default function App() {
               <ul>{s.bullets.map((b, i) => <li key={i}>{b}</li>)}</ul>
             </article>
           ))}
-          <div className="filters"><a className="filter" href="#list-about">Jump to the next section ↓</a></div>
           <h3 id="list-about">About</h3>
+          <div className="filters"><a className="filter" href="#list-experience">Jump to the next section ↓</a></div>
           {STATIONS.filter((s) => s.type === "about").map((s) => (
             <article className="card list-item" key={s.id}>
               <h3><StationIcon kind={s.icon} size={22} /> {s.name}, {s.dates}</h3>
@@ -255,8 +256,8 @@ export default function App() {
               <ul>{s.bullets.map((b, i) => <li key={i}>{b}</li>)}</ul>
             </article>
           ))}
-          <div className="filters"><a className="filter" href="#list-experience">Jump to the next section ↓</a></div>
           <h3 id="list-experience">Experience, newest first</h3>
+          <div className="filters"><a className="filter" href="#list-projects">Jump to the next section ↓</a></div>
           {experiences.map((s) => (
             <article className="card list-item" key={s.id}>
               <h3><StationIcon kind={s.icon} size={22} /> {s.name}, {s.role}</h3>
@@ -266,8 +267,8 @@ export default function App() {
               <div className="tags">{s.tech.map((t) => <span className="tag" key={t}>{t}</span>)}</div>
             </article>
           ))}
-          <div className="filters"><a className="filter" href="#list-projects">Jump to the next section ↓</a></div>
           <h3 id="list-projects">Projects, newest first</h3>
+          <div className="filters"><a className="filter" href="#ctf">Jump to the next section ↓</a></div>
           {projects.map((s) => (
             <article className="card list-item" key={s.id}>
               <h3><StationIcon kind={s.icon} size={22} /> {s.name}, {s.dates}</h3>
@@ -277,7 +278,7 @@ export default function App() {
               <div className="tags">{s.tech.map((t) => <span className="tag" key={t}>{t}</span>)}</div>
             </article>
           ))}
-          <div className="filters"><a className="filter" href="#ctf">Jump to the next section ↓</a><a className="filter" href="#list">Back to the top of the list</a><a className="filter" href="#top">Back to the very top ↑</a></div>
+          <div className="filters"><a className="filter" href="#list">Back to the top of the list</a><a className="filter" href="#top">Back to the very top ↑</a></div>
         </section>
         <section className="section wrap" id="ctf" aria-labelledby="ctf-h">
           <h2 id="ctf-h">Capture the Flag</h2>
@@ -312,8 +313,6 @@ export default function App() {
             <div className="tags" style={{ marginTop: 12 }}>
               <span className="tag">{EMAIL}</span>
               <a className="tag" href="tel:+16477629037">(647) 762-9037</a>
-              <a className="tag" href={GITHUB_URL} target="_blank" rel="noreferrer">github.com/hyneeb</a>
-              <a className="tag" href={LINKEDIN_URL} target="_blank" rel="noreferrer">linkedin.com/in/syedmuneebhyder</a>
             </div>
           </div>
         </section>
